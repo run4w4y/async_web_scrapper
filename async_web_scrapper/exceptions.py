@@ -1,0 +1,2 @@
+class ImproperInitError(BaseException):
+    pass

@@ -1,0 +1,2 @@
+class InvalidIPStringError(BaseException):
+    pass
