@@ -3,6 +3,7 @@ import logging
 from .csv_writer import AsyncCSVWriter
 from abc import ABC, abstractmethod
 from .exceptions import ImproperInitError
+from .file_downloader import AsyncFileDownloader
 
 
 class _JobDone:
@@ -32,16 +33,23 @@ class GenericScrapper(ABC):
         
         self.__page_queue = asyncio.Queue(maxsize=self.workers_amount)
         self.__result_queue = asyncio.Queue()
-        self.result = []
+        self.__result = []
         self.pages = None
 
         self.__csv_writer = None
         if self.csvpath is not None:
             self.__csv_writer = AsyncCSVWriter(csvpath)
+        
+        self.downloader = AsyncFileDownloader(workers_amount=15)
 
         self.task_parser = asyncio.create_task(self._start_parser())
         self.task_result = asyncio.create_task(self._result_writer())
         self.tasks_dispatched = [asyncio.create_task(self._dispatched_parser(i)) for i in range(workers_amount)]
+
+    @property
+    async def result(self):
+        await self.task_result
+        return self.__result
 
     async def _result_writer(self):
         while True:
@@ -49,7 +57,7 @@ class GenericScrapper(ABC):
             if res is self.JOB_DONE:
                 break
 
-            self.result.extend(res)
+            self.__result.extend(res)
 
     async def _start_parser(self):
         await self._pages_constructor()
