@@ -1,7 +1,7 @@
 import httpx
 import logging
 from bs4 import BeautifulSoup
-from async_web_scrapper import GenericScrapper, GenericItem, GenericPage 
+from async_web_scrapper import GenericScrapper, GenericItem, GenericPage
 
 HEADERS = {
     'User-Agent': 
@@ -24,20 +24,29 @@ class EtsyPage(GenericPage):
     async def items(self):
         logging.info(self.url)
 
-        async with httpx.AsyncClient(headers=HEADERS) as client:
-            r = await client.get(self.url)
+        r = None
+        if self.proxy_pool is not None:
+            proxy = await self.proxy_pool.get_proxy()
+            async with httpx.AsyncClient(headers=HEADERS, proxies=proxy.to_httpx()) as client:
+                r = await client.get(self.url, timeout=12)
+        else:
+            async with httpx.AsyncClient(headers=HEADERS) as client:
+                r = await client.get(self.url, timeout=12)
         
         html = BeautifulSoup(r.text, 'html.parser')
         found_items = html.find_all('a', attrs={'class': 'listing-link'})
-        return list(map(
-            lambda x: 
-                EtsyItem(
-                    x['title'], 
-                    x['data-listing-id'], 
-                    x.find('img')['srcset'].split(',')[1].split()[0].strip()
-                ), 
-                found_items
-        ))
+
+        res = []
+        for i in found_items:
+            item = EtsyItem(
+                i['title'], 
+                i['data-listing-id'], 
+                i.find('img')['srcset'].split(',')[1].split()[0].strip()
+            )
+            await self.downloader.add_download(item.image_url)
+            res.append(item)
+
+        return res
 
 
 class EtsyScrapper(GenericScrapper):
@@ -46,11 +55,18 @@ class EtsyScrapper(GenericScrapper):
         return f'https://www.etsy.com/shop/EvintageVeils/sold?ref=pagination&page={page}'
     
     async def _pages_constructor(self):
-        async with httpx.AsyncClient(headers=HEADERS) as client:
-            r = await client.get(self.BASE_URL(1))
-            r.raise_for_status()
+        r = None
+        if self.proxy_pool is not None:
+            proxy = await self.proxy_pool.get_proxy()
+            async with httpx.AsyncClient(headers=HEADERS, proxies=proxy.to_httpx()) as client:
+                r = await client.get(self.BASE_URL(1), timeout=12)
+        else:
+            logging.warning('ProxyPool is None')
+            async with httpx.AsyncClient(headers=HEADERS) as client:
+                r = await client.get(self.BASE_URL(1), timeout=12)
+        r.raise_for_status()
 
         html = BeautifulSoup(r.text, 'html.parser')
         limit = int(html.find('ul', attrs={'class': 'btn-group-md'}).find_all('a')[-2]['data-page'])
         logging.info(limit)
-        self.pages = [EtsyPage(self.BASE_URL(i)) for i in range(1, limit + 1)]
+        self.pages = [EtsyPage(self.BASE_URL(i), proxy_pool=self.proxy_pool, downloader=self.downloader) for i in range(1, limit + 1)]
