@@ -1,5 +1,7 @@
+import httpx
 import asyncio
 import logging
+import ssl
 from .csv_writer import AsyncCSVWriter
 from abc import ABC, abstractmethod
 from .exceptions import ImproperInitError
@@ -8,6 +10,22 @@ from .file_downloader import AsyncFileDownloader
 
 class _JobDone:
     pass
+
+
+def failsafe_request(f):
+    async def wrapped(*args, **kwargs):
+        res = None
+        while True:
+            try:
+                logging.info('failed retrieving the page')
+                res = await f(*args, **kwargs)
+            except (ssl.SSLError, httpx.HTTPError):
+                continue
+            else:
+                break
+        return res
+
+    return wrapped
 
 
 # TODO: make use of file downloader
@@ -83,7 +101,7 @@ class GenericScrapper(ABC):
                 break
             
             res = await page.items
-
+            logging.info('Got page contents, writing to csv')
             if self.__csv_writer is not None:
                 for item in res:
                     await self.__csv_writer.add_item(item)
