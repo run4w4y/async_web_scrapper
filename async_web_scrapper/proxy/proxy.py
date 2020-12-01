@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from async_web_scrapper import GenericItem
 import logging
 import httpx
+import ssl
 
 
 class Proxy(GenericItem, ABC):
@@ -42,10 +43,10 @@ class Proxy(GenericItem, ABC):
             async with httpx.AsyncClient(proxies=self.to_httpx()) as client:
                 r = await client.get(self.PING_URL, timeout=20)
                 
-            logging.info(f'Proxy {self} is available')
+            # logging.info(f'Proxy {self} is available')
             return True
-        except httpx.HTTPError as e:
-            logging.warning(f'Proxy {self} seems to be unavailable, error: {str(e)}')
+        except (httpx.HTTPError, ssl.SSLError) as e:
+            # logging.warning(f'Proxy {self} seems to be unavailable')
             return False
 
     # converts proxy to a dict usable with requests
