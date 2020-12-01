@@ -1,7 +1,7 @@
 import httpx
 import logging
 from bs4 import BeautifulSoup
-from async_web_scrapper import GenericScrapper, GenericItem, GenericPage
+from async_web_scrapper import GenericScrapper, GenericItem, GenericPage, failsafe_request
 
 HEADERS = {
     'User-Agent': 
@@ -21,6 +21,7 @@ class EtsyItem(GenericItem):
 
 class EtsyPage(GenericPage):
     @property
+    @failsafe_request
     async def items(self):
         logging.info(self.url)
 
@@ -43,6 +44,7 @@ class EtsyPage(GenericPage):
                 i['data-listing-id'], 
                 i.find('img')['srcset'].split(',')[1].split()[0].strip()
             )
+            # logging.info(f'Added {item.image_url} to download queue')
             await self.downloader.add_download(item.image_url)
             res.append(item)
 
@@ -54,7 +56,8 @@ class EtsyScrapper(GenericScrapper):
     def BASE_URL(page):
         return f'https://www.etsy.com/shop/EvintageVeils/sold?ref=pagination&page={page}'
     
-    async def _pages_constructor(self):
+    @failsafe_request
+    async def __get_limit(self):
         r = None
         if self.proxy_pool is not None:
             proxy = await self.proxy_pool.get_proxy()
@@ -67,6 +70,9 @@ class EtsyScrapper(GenericScrapper):
         r.raise_for_status()
 
         html = BeautifulSoup(r.text, 'html.parser')
-        limit = int(html.find('ul', attrs={'class': 'btn-group-md'}).find_all('a')[-2]['data-page'])
+        return int(html.find('ul', attrs={'class': 'btn-group-md'}).find_all('a')[-2]['data-page'])
+
+    async def _pages_constructor(self):
+        limit = await self.__get_limit()
         logging.info(limit)
         self.pages = [EtsyPage(self.BASE_URL(i), proxy_pool=self.proxy_pool, downloader=self.downloader) for i in range(1, limit + 1)]
