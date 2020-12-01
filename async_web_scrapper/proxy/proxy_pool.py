@@ -75,11 +75,22 @@ class ProxyPool:
 
     # renews used proxies when timeout runs out
     async def _start_renewer(self):
+        await self.task_init
         logging.info('Proxy renewer started')
+        counter = dict.fromkeys(self.proxies, 0)
+        
         while True:
             proxy = await self.__used_queue.get()
-            await asyncio.sleep(self.USED_TIMEOUT)
-            await self.__bad_queue.put(proxy)
+            counter[proxy] += 1
+            if counter[proxy] >= 50:
+                asyncio.create_task(self._hold_proxy(proxy))
+            else:
+                await self.__good_queue.put(proxy)
+    
+    async def _hold_proxy(self, proxy):
+        logging.info('Proxy {proxy} is on hold')
+        await asyncio.sleep(self.USED_TIMEOUT)
+        await self.__bad_queue.put(proxy)
 
     # generator that yields a supposedly available proxy
     async def get_proxy(self) -> Proxy:
