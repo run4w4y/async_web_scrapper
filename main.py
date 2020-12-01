@@ -1,13 +1,15 @@
 import asyncio
 import logging
-from async_web_scrapper.proxy import ProxyScrapper
+from async_web_scrapper.proxy import ProxyScrapper, ProxyPool
+from etsy_driver import EtsyScrapper
 
 async def main():
-    scrapper = ProxyScrapper(csvpath='items.csv')
-    await scrapper.task_result
-    print(scrapper.result)
+    proxy_pool = ProxyPool(scrapper=ProxyScrapper(csvpath='proxies.csv'))
+    scrapper = EtsyScrapper(csvpath='items.csv', proxy_pool=proxy_pool)
+    await scrapper.result
 
 if __name__ == '__main__':
+    asyncio.log.logger.setLevel(logging.ERROR)
     logging.basicConfig(format='[%(asctime)s] %(message)s', level=logging.INFO)
     logging.info('Starting scrapper')
     
