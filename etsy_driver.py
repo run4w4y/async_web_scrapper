@@ -23,7 +23,7 @@ class EtsyPage(GenericPage):
     @property
     @failsafe_request
     async def items(self):
-        logging.info(self.url)
+        logging.info(f'Scrapping {self.url}')
 
         r = None
         if self.proxy_pool is not None:
@@ -44,7 +44,6 @@ class EtsyPage(GenericPage):
                 i['data-listing-id'], 
                 i.find('img')['srcset'].split(',')[1].split()[0].strip()
             )
-            # logging.info(f'Added {item.image_url} to download queue')
             await self.downloader.add_download(item.image_url)
             res.append(item)
 

@@ -1,11 +1,11 @@
 import asyncio
 import logging
 from async_web_scrapper.proxy import ProxyScrapper, ProxyPool
-from etsy_driver import EtsyScrapper
+from kaggle_social_driver import KaggleSocialScrapper 
 
 async def main():
-    proxy_pool = ProxyPool(scrapper=ProxyScrapper(csvpath='proxies.csv'))
-    scrapper = EtsyScrapper(csvpath='items.csv', proxy_pool=proxy_pool)
+    proxy_pool = ProxyPool(scrapper=ProxyScrapper())
+    scrapper = KaggleSocialScrapper(csvpath='kaggle_social/users.csv', proxy_pool=proxy_pool)
     await scrapper.result
 
 if __name__ == '__main__':

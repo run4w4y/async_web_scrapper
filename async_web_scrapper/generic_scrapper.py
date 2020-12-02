@@ -1,5 +1,6 @@
 import httpx
 import asyncio
+import asyncio.exceptions
 import logging
 import ssl
 from .csv_writer import AsyncCSVWriter
@@ -17,9 +18,8 @@ def failsafe_request(f):
         res = None
         while True:
             try:
-                logging.info('failed retrieving the page')
                 res = await f(*args, **kwargs)
-            except (ssl.SSLError, httpx.HTTPError):
+            except (ssl.SSLError, httpx.HTTPError, asyncio.exceptions.TimeoutError, httpx.ReadError):
                 continue
             else:
                 break
@@ -28,8 +28,6 @@ def failsafe_request(f):
     return wrapped
 
 
-# TODO: make use of file downloader
-# TODO: make use of proxy pool
 class GenericScrapper(ABC):
     JOB_DONE = _JobDone()
 
@@ -101,7 +99,6 @@ class GenericScrapper(ABC):
                 break
             
             res = await page.items
-            logging.info('Got page contents, writing to csv')
             if self.__csv_writer is not None:
                 for item in res:
                     await self.__csv_writer.add_item(item)

@@ -8,7 +8,7 @@ import logging
 
 class AsyncFileDownloader:
     def __init__(self, save_path: str = 'downloads/', workers_amount: int = 10):
-        logging.info('File downloader started')
+        logging.info(f'Started AsyncFileDownloader with save_path={save_path}')
         self.save_path = save_path
         os.makedirs(self.save_path, exist_ok=True)
         self.workers_amount = workers_amount
@@ -22,7 +22,7 @@ class AsyncFileDownloader:
     async def _downloader_dispatched(self, number: int):
         while True:
             url = await self.__download_queue.get()
-            logging.info(f'Downloading image {url}')
+            logging.info(f'Downloading {url}')
             filename = url.split('/')[-1]
 
             async with httpx.AsyncClient() as client:
