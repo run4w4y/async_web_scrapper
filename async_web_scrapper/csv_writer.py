@@ -1,7 +1,6 @@
 import csv
 import asyncio
 import logging
-import os
 import os.path
 from . import GenericItem
 
@@ -12,8 +11,11 @@ from . import GenericItem
 class AsyncCSVWriter:
     # class constructor
     def __init__(self, csvpath: str):
+        self.existing_rows = []
         if os.path.exists(csvpath):
-            os.remove(csvpath)
+            with open(csvpath) as csvfile:
+                reader = csv.reader(csvfile)
+                self.existing_rows.extend(list(reader))
 
         self.csvpath = csvpath
         self.__write_queue = asyncio.Queue()
