@@ -31,9 +31,8 @@ def failsafe_request(f):
 class GenericScrapper(ABC):
     JOB_DONE = _JobDone()
 
-    @staticmethod
     @abstractmethod
-    def BASE_URL(page):
+    def BASE_URL(self, page):
         pass
     
     @abstractmethod
