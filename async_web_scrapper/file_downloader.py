@@ -23,7 +23,7 @@ class AsyncFileDownloader:
         while True:
             url = await self.__download_queue.get()
             logging.info(f'Downloading {url}')
-            filename = url.split('/')[-1]
+            filename = url.split('/')[-1].split('?')[0]
 
             async with httpx.AsyncClient() as client:
                 r = await client.get(url)
