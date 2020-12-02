@@ -52,9 +52,9 @@ class GenericScrapper(ABC):
         self.__result = []
         self.pages = None
 
-        self.__csv_writer = None
+        self._csv_writer = None
         if self.csvpath is not None:
-            self.__csv_writer = AsyncCSVWriter(csvpath)
+            self._csv_writer = AsyncCSVWriter(csvpath)
         
         self.downloader = AsyncFileDownloader(workers_amount=15)
 
@@ -99,8 +99,8 @@ class GenericScrapper(ABC):
                 break
             
             res = await page.items
-            if self.__csv_writer is not None:
+            if self._csv_writer is not None:
                 for item in res:
-                    await self.__csv_writer.add_item(item)
+                    await self._csv_writer.add_item(item)
             
             await self.__result_queue.put(res)
