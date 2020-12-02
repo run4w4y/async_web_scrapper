@@ -60,7 +60,7 @@ class USPage(AnonPage):
 
 
 class ProxyScrapper(GenericScrapper):
-    def BASE_URL(page):
+    def BASE_URL(self, page):
         urls_dict = {
             PageEnum.SOCKS: 'https://www.socks-proxy.net/',
             PageEnum.HTTPS: 'https://www.sslproxies.org/',
