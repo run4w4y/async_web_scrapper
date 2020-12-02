@@ -41,7 +41,7 @@ class GenericScrapper(ABC):
     
     # if proxy_pool is None scrapper is not going to be using any proxies
     # if csvpath is None scrapper is not going to be writing results to csv
-    def __init__(self, workers_amount: int = 10, proxy_pool = None, csvpath: str = None):
+    def __init__(self, workers_amount: int = 10, proxy_pool = None, csvpath: str = None, download_path: str = None):
         self.proxy_pool = proxy_pool
         self.csvpath = csvpath
         self.workers_amount = workers_amount
@@ -55,7 +55,10 @@ class GenericScrapper(ABC):
         if self.csvpath is not None:
             self._csv_writer = AsyncCSVWriter(csvpath)
         
-        self.downloader = AsyncFileDownloader(workers_amount=15)
+        if download_path is not None:
+            self.downloader = AsyncFileDownloader(workers_amount=15, save_path=download_path)
+        else:
+            self.downloader = AsyncFileDownloader(workers_amount=15)
 
         self.task_parser = asyncio.create_task(self._start_parser())
         self.task_result = asyncio.create_task(self._result_writer())
