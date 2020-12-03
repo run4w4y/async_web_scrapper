@@ -1,7 +1,7 @@
 import logging
 import httpx
 from .proxy_types import *
-from .. import GenericScrapper, GenericPage
+from .. import GenericScrapper, GenericPage, failsafe_request
 from bs4 import BeautifulSoup
 from enum import Enum
 
@@ -29,6 +29,7 @@ class _ProxyPage:
 
 class SOCKSPage(GenericPage, _ProxyPage):
     @property
+    @failsafe_request
     async def items(self):
         logging.info('Parsing page with SOCKS proxies')
         entries = await self.parse_entries()
@@ -37,6 +38,7 @@ class SOCKSPage(GenericPage, _ProxyPage):
 
 class HTTPSPage(GenericPage, _ProxyPage):
     @property
+    @failsafe_request
     async def items(self):
         logging.info('Parsing page with HTTPS proxies')
         entries = await self.parse_entries()
@@ -45,6 +47,7 @@ class HTTPSPage(GenericPage, _ProxyPage):
 
 class AnonPage(GenericPage, _ProxyPage):
     @property
+    @failsafe_request
     async def items(self):
         logging.info('Parsing page with anonymous proxies')
         entries = await self.parse_entries()
