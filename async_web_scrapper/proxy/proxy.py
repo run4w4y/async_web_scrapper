@@ -3,6 +3,7 @@ from async_web_scrapper import GenericItem
 import logging
 import httpx
 import ssl
+import asyncio.exceptions
 
 
 class Proxy(GenericItem, ABC):
@@ -45,7 +46,7 @@ class Proxy(GenericItem, ABC):
                 
             # logging.info(f'Proxy {self} is available')
             return True
-        except (httpx.HTTPError, ssl.SSLError) as e:
+        except (httpx.HTTPError, ssl.SSLError, asyncio.exceptions.TimeoutError) as e:
             # logging.warning(f'Proxy {self} seems to be unavailable')
             return False
 
