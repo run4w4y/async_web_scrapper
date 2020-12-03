@@ -17,15 +17,16 @@ class AsyncFileDownloader:
         self.tasks_dispatched = [asyncio.create_task(self._downloader_dispatched(i)) for i in range(self.workers_amount)]
     
     async def add_download(self, url: str):
-        await self.__download_queue.put(url)
+        filename = url.split('/')[-1].split('?')[0]
+        await self.__download_queue.put((url, filename))
+        return filename
     
     async def _downloader_dispatched(self, number: int):
         logging.info(f'Started dispatched downloader {number}')
         while True:
-            url = await self.__download_queue.get()
+            url, filename = await self.__download_queue.get()
             logging.info(f'Downloading {url}')
-            filename = url.split('/')[-1].split('?')[0]
-
+            
             async with httpx.AsyncClient() as client:
                 r = await client.get(url)
                 r.raise_for_status()
