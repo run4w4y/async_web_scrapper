@@ -6,6 +6,7 @@ pkgs.mkShell {
   buildInputs = with pkgs; [
     (python38.withPackages (p: with p; [
       httpx
+      idna
       beautifulsoup4
       aiofiles
     ]))
