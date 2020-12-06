@@ -10,7 +10,7 @@ class AsyncFileDownloader:
     def __init__(self, save_path: str = 'downloads/', workers_amount: int = 10):
         logging.info(f'Started AsyncFileDownloader with save_path={save_path}')
         self.save_path = save_path
-        os.makedirs(self.save_path, parents=True, exist_ok=True)
+        os.makedirs(self.save_path, exist_ok=True)
         self.workers_amount = workers_amount
 
         self.__download_queue = asyncio.Queue()
