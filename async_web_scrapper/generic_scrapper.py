@@ -94,6 +94,9 @@ class GenericScrapper(ABC):
             # end result writer
             await self._result_queue.put(self.JOB_DONE)
             await self.task_result
+        else:
+            await asyncio.gather(*self.tasks_dispatched)
+            await self.task_result
 
     async def _dispatched_parser(self, number):
         while True:
@@ -114,6 +117,8 @@ class GenericScrapper(ABC):
                     await self._csv_writer.add_item(item)
         
             if not pages and self.recursive:
+                await self._page_queue.put(self.JOB_DONE)
+                await self._result_queue.put(self.JOB_DONE)
                 break
 
             for page in pages:
