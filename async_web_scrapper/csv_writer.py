@@ -1,5 +1,7 @@
+import io
 import csv
 import asyncio
+import aiofiles
 import logging
 import os.path
 from . import GenericItem
@@ -29,6 +31,8 @@ class AsyncCSVWriter:
         logging.info(f'Started AsyncCSVWriter with csvpath={self.csvpath}')
         while True:
             item = await self.__write_queue.get()
-            with open(self.csvpath, 'a', newline='') as csvfile:
-                writer = csv.writer(csvfile)
+            async with aiofiles.open(self.csvpath, 'a', newline='') as csvfile:
+                buffer = io.StringIO()
+                writer = csv.writer(buffer)
                 writer.writerow(item.to_csv_row())
+                await csvfile.write(buffer.getvalue())
