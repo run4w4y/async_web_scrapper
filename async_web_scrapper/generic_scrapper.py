@@ -116,9 +116,7 @@ class GenericScrapper(ABC):
                 for item in res:
                     await self._csv_writer.add_item(item)
         
-            if not pages and self.recursive:
-                await self._page_queue.put(self.JOB_DONE)
-                await self._result_queue.put(self.JOB_DONE)
+            if not pages and self.recursive and self._page_queue.empty():
                 break
 
             for page in pages:
