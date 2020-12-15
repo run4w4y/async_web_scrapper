@@ -72,8 +72,10 @@ class GenericScrapper(ABC):
 
     async def _result_writer(self):
         while True:
+            logging.info('Started result queue writer')
             res = await self._result_queue.get()
             if res is self.JOB_DONE:
+                logging.info('Result queue writer exit')
                 break
 
             self.__result.extend(res)
@@ -96,13 +98,16 @@ class GenericScrapper(ABC):
             await self.task_result
         else:
             await asyncio.gather(*self.tasks_dispatched)
+            await self._result_queue.put(self.JOB_DONE)
             await self.task_result
 
     async def _dispatched_parser(self, number):
         while True:
+            logging.info(f'Started dispatched scrapper {number}')
             page = await self._page_queue.get()
             if page is self.JOB_DONE:
                 await self._page_queue.put(self.JOB_DONE)
+                logging.info(f'Dispatched parser {number} exit')
                 break
             
             pages = []
@@ -117,6 +122,7 @@ class GenericScrapper(ABC):
                     await self._csv_writer.add_item(item)
         
             if not pages and self.recursive and self._page_queue.empty():
+                logging.info(f'Dispatched parser {number} exit')
                 break
 
             for page in pages:
