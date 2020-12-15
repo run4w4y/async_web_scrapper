@@ -5,7 +5,7 @@ import logging
 
 async def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], '', ['driver=', 'shopname=', 'baseurl=', 'useproxy', 'mode=', 'keyword='])
+        opts, args = getopt.getopt(sys.argv[1:], '', ['csvpath=', 'driver=', 'shopname=', 'baseurl=', 'useproxy', 'mode=', 'keyword='])
     except getopt.GetoptError:
         logging.error('Specify options properly')
         sys.exit(1)
