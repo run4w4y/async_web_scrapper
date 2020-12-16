@@ -71,8 +71,8 @@ class GenericScrapper(ABC):
         return self.__result
 
     async def _result_writer(self):
+        logging.info('Started result queue writer')
         while True:
-            logging.info('Started result queue writer')
             res = await self._result_queue.get()
             if res is self.JOB_DONE:
                 logging.info('Result queue writer exit')
@@ -102,8 +102,8 @@ class GenericScrapper(ABC):
             await self.task_result
 
     async def _dispatched_parser(self, number):
+        logging.info(f'Started dispatched scrapper {number}')
         while True:
-            logging.info(f'Started dispatched scrapper {number}')
             page = await self._page_queue.get()
             if page is self.JOB_DONE:
                 await self._page_queue.put(self.JOB_DONE)
