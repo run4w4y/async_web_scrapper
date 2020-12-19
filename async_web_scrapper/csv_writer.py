@@ -39,6 +39,6 @@ class AsyncCSVWriter:
         while True:
             try:
                 item = await self.__write_queue.get()
-                self._write(item)
+                await self._write(item)
             except asyncio.CancelledError:
                 logging.info(f'AsyncCSVWriter(csvpath={self.csvpath}) done')
