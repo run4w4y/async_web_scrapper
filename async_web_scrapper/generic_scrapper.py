@@ -100,6 +100,8 @@ class GenericScrapper(ABC):
             await asyncio.gather(*self.tasks_dispatched)
             await self._result_queue.put(self.JOB_DONE)
             await self.task_result
+            if self._csv_writer is not None:
+                await self._csv_writer.stop()
 
     async def _dispatched_parser(self, number):
         logging.info(f'Started dispatched scrapper {number}')
