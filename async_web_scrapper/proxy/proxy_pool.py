@@ -88,7 +88,7 @@ class ProxyPool:
                 await self.__good_queue.put(proxy)
     
     async def _hold_proxy(self, proxy):
-        logging.info('Proxy {proxy} is on hold')
+        logging.info(f'Proxy {proxy} is on hold')
         await asyncio.sleep(self.USED_TIMEOUT)
         await self.__bad_queue.put(proxy)
 
