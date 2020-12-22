@@ -82,10 +82,11 @@ class ProxyPool:
         while True:
             proxy = await self.__used_queue.get()
             counter[proxy] += 1
-            if counter[proxy] >= 50:
-                asyncio.create_task(self._hold_proxy(proxy))
-            else:
-                await self.__good_queue.put(proxy)
+            # if counter[proxy] >= 50:
+            #     asyncio.create_task(self._hold_proxy(proxy))
+            # else:
+            #     await self.__good_queue.put(proxy)
+            await self.__good_queue.put(proxy)
     
     async def _hold_proxy(self, proxy):
         logging.info(f'Proxy {proxy} is on hold')
