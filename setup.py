@@ -13,6 +13,12 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/run4w4y/async_web_scrapper",
     packages=setuptools.find_packages(),
+    install_requires=[
+        'trio',
+        'httpx',
+        'idna',
+        'beautifulsoup4'
+    ],
     classifiers=[
         "Programming Language :: Python :: 3",
         "Operating System :: OS Independent",
