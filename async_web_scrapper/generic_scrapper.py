@@ -1,133 +1,94 @@
-import httpx
-import asyncio
-import asyncio.exceptions
+import trio
+import math
 import logging
-import ssl
-from .csv_writer import AsyncCSVWriter
+from . import CSVWriter, FileDownloader
 from abc import ABC, abstractmethod
-from .exceptions import ImproperInitError
-from .file_downloader import AsyncFileDownloader
-
-
-class _JobDone:
-    pass
-
-
-def failsafe_request(f):
-    async def wrapped(*args, **kwargs):
-        res = None
-        while True:
-            try:
-                res = await f(*args, **kwargs)
-            except (ssl.SSLError, httpx.HTTPError, asyncio.exceptions.TimeoutError, httpx.ReadError):
-                continue
-            else:
-                break
-        return res
-
-    return wrapped
 
 
 class GenericScrapper(ABC):
-    JOB_DONE = _JobDone()
-
-    @abstractmethod
-    def BASE_URL(self, page):
-        pass
-    
-    @abstractmethod
-    async def _pages_constructor(self):
-        pass
-    
-    # if proxy_pool is None scrapper is not going to be using any proxies
-    # if csvpath is None scrapper is not going to be writing results to csv
-    def __init__(self, workers_amount: int = 10, proxy_pool = None, csvpath: str = None, download_path: str = None, recursive: bool = False):
-        self.recursive = recursive
-        self.proxy_pool = proxy_pool
-        self.csvpath = csvpath
+    def __init__(self, retriever, csv_writer=None, downloader=None, workers_amount=10):
+        self.retriever = retriever
+        self.csv_writer = csv_writer
+        self.downloader = downloader
         self.workers_amount = workers_amount
-        
-        self._page_queue = asyncio.Queue(maxsize=self.workers_amount)
-        self._result_queue = asyncio.Queue()
-        self.__result = []
-        self.pages = None
 
-        self._csv_writer = None
-        if self.csvpath is not None:
-            self._csv_writer = AsyncCSVWriter(csvpath)
-        
-        if download_path is not None:
-            self.downloader = AsyncFileDownloader(workers_amount=15, save_path=download_path)
-        else:
-            self.downloader = AsyncFileDownloader(workers_amount=15)
-
-        self.task_parser = asyncio.create_task(self._start_parser())
-        self.task_result = asyncio.create_task(self._result_writer())
-        self.tasks_dispatched = [asyncio.create_task(self._dispatched_parser(i)) for i in range(workers_amount)]
+        self._used_pages = set()
+        self._pages_set = set()
+        self._page_send_channel, self._page_receive_channel = trio.open_memory_channel(math.inf)
+        self._result_send_channel, self.result_receive_channel = trio.open_memory_channel(math.inf)
+        self._done_send_channel, self._done_receive_channel = trio.open_memory_channel(0)
 
     @property
-    async def result(self):
-        await self.task_result
-        return self.__result
+    @abstractmethod
+    async def pages(self):
+        pass
 
-    async def _result_writer(self):
-        logging.info('Started result queue writer')
-        while True:
-            res = await self._result_queue.get()
-            if res is self.JOB_DONE:
-                logging.info('Result queue writer exit')
-                break
+    @property
+    async def done(self):
+        await self._done_receive_channel.receive()
+        # close the channel
+        await self._done_receive_channel.aclose()
 
-            self.__result.extend(res)
-
-    async def _start_parser(self):
-        await self._pages_constructor()
-        
-        if self.pages is None:
-            raise ImproperInitError('Object self.pages was not initialized properly. Make sure to fill it in on startup.')
-        
-        for page in self.pages:
-            await self._page_queue.put(page)
-        
-        if not self.recursive:
-            # end dispatched tasks
-            await self._page_queue.put(self.JOB_DONE)
-            await asyncio.gather(*self.tasks_dispatched)
-            # end result writer
-            await self._result_queue.put(self.JOB_DONE)
-            await self.task_result
-        else:
-            await asyncio.gather(*self.tasks_dispatched)
-            await self._result_queue.put(self.JOB_DONE)
-            await self.task_result
-            if self._csv_writer is not None:
-                await self._csv_writer.stop()
-
-    async def _dispatched_parser(self, number):
-        logging.info(f'Started dispatched scrapper {number}')
-        while True:
-            page = await self._page_queue.get()
-            if page is self.JOB_DONE:
-                await self._page_queue.put(self.JOB_DONE)
-                logging.info(f'Dispatched parser {number} exit')
-                break
+    async def _wait_till_done(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            task_status.started()
             
-            pages = []
-            res = None
-            if not self.recursive:
-                res = await page.items
-            else:
-                res, pages = await page.items 
-            
-            if self._csv_writer is not None:
-                for item in res:
-                    await self._csv_writer.add_item(item)
+            while self._pages_set != self._used_pages:
+                await trio.sleep(1.5)
+
+            await self._done_send_channel.send(True)
+
+    async def _dispatched_scrapper(self, number=0, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            task_status.started(scope)
+            logging.info(f'Started dispatched {type(self).__name__} #{number}')
+
+            while True:
+                page = await self._page_receive_channel.receive()
+                res = await page.process()
+                
+                for page in res.pages:
+                    self._pages_set.add(page)
+                    await self._page_send_channel.send(page)
+                
+                for item in res.items:
+                    if self.csv_writer is not None:
+                        await self.csv_writer.add_item(item)
+                    await self._result_send_channel.send(item)
+                
+                for download in res.downloads:
+                    if self.downloader is not None:
+                        await self.donwloader.add_download(download)
+                
+                self._used_pages.add(page)
         
-            if not pages and self.recursive and self._page_queue.empty():
-                logging.info(f'Dispatched parser {number} exit')
-                break
+        logging.info(f'Dispatched {type(self).__name__} #{number} done')
 
-            for page in pages:
-                await self._page_queue.put(page)
+    async def start(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            start_pages = await self.pages
+            for page in start_pages:
+                self._pages_set.add(page)
+                await self._page_send_channel.send(page)
 
-            await self._result_queue.put(res)
+            async with trio.open_nursery() as nursery:
+                children_scopes = [
+                    await nursery.start(self._dispatched_scrapper, i) 
+                for i in range(self.workers_amount)]
+
+                task_status.started(scope)
+                logging.info(f'Started {type(self).__name__}')
+                
+                await nursery.start(self._wait_till_done)
+
+        # close all the channels when we are done
+        await self._page_send_channel.aclose()
+        await self._page_receive_channel.aclose()
+        await self._result_send_channel.aclose()
+        await self._done_send_channel.aclose()
+
+        # cancel children
+        for scope in children_scopes:
+            scope.cancel()
+        
+        logging.info(f'{type(self).__name__} done')

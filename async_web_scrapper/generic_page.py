@@ -1,14 +1,21 @@
+import httpx
+from bs4 import BeautifulSoup
 from abc import ABC, abstractmethod
-from .file_downloader import AsyncFileDownloader
+
+
+class PageResult:
+    def __init__(self, items=[], pages=[], downloads=[]):
+        self.items = items
+        self.pages = pages
+        self.downloads = downloads
 
 
 class GenericPage(ABC):
-    def __init__(self, url: str, proxy_pool = None, downloader: AsyncFileDownloader = None):
+    def __init__(self, url, retriever, downloader=None):
         self.url = url
-        self.proxy_pool = proxy_pool
+        self.retriever = retriever
         self.downloader = downloader
-    
-    @property
+
     @abstractmethod
-    async def items(self):
+    async def process(self) -> PageResult:
         pass

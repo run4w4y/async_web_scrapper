@@ -8,8 +8,7 @@ pkgs.mkShell {
       httpx
       idna
       beautifulsoup4
-      aiofiles
-      dateparser
+      trio
     ]))
   ];
 

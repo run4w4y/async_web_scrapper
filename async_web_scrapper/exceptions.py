@@ -1,2 +1,0 @@
-class ImproperInitError(BaseException):
-    pass

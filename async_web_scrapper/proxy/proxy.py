@@ -1,14 +1,9 @@
 from abc import ABC, abstractmethod
 from async_web_scrapper import GenericItem
-import logging
-import httpx
-import ssl
-import asyncio.exceptions
+from .exceptions import InvalidIPStringError
 
 
 class Proxy(GenericItem, ABC):
-    PING_URL = 'https://www.google.com/'
-    
     @property
     @abstractmethod
     def PROXY_PROTOCOL(self):
@@ -19,6 +14,12 @@ class Proxy(GenericItem, ABC):
 
     def __repr(self):
         return str(self)
+    
+    def __eq__(self, other):
+        return str(self) == str(other)
+    
+    def __hash__(self):
+        return hash(str(self))
 
     # class constructor, pretty much the same everywhere
     def __init__(self, ip: str, port: int, country: str = None):
@@ -37,18 +38,6 @@ class Proxy(GenericItem, ABC):
         
         s = proxy_str.split(':')
         return cls(s[0], int(s[1]))
-    
-    # checks if proxy is available
-    async def check(self) -> bool:
-        try:
-            async with httpx.AsyncClient(proxies=self.to_httpx()) as client:
-                r = await client.get(self.PING_URL, timeout=20)
-                
-            # logging.info(f'Proxy {self} is available')
-            return True
-        except (httpx.HTTPError, ssl.SSLError, asyncio.exceptions.TimeoutError) as e:
-            # logging.warning(f'Proxy {self} seems to be unavailable')
-            return False
 
     # converts proxy to a dict usable with requests
     def to_httpx(self):

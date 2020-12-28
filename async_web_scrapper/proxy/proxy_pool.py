@@ -1,100 +1,84 @@
-import asyncio
+import ssl
+import trio
+import math
+import httpx
 import logging
-from . import Proxy
-from . import ProxyScrapper
+from .proxy import Proxy
+from .proxy_source import ProxySource
 from .proxy_types import HTTPSProxy
 
 
-# TODO: check
+# TODO: refresh proxies in the pool from time to time
 class ProxyPool:
-    # class constructor
-    # proxies - list of HTTPSProxy
-    # used_timeout - timeout for used proxies
-    def __init__(self,
-                 proxies: list = [],
-                 used_timeout: int = 21600,
-                 dispatched_amount: int = 10,
-                 scrapper: ProxyScrapper = None):
-        self.USED_TIMEOUT = used_timeout
-        self.proxies = proxies
-        self.scrapper = scrapper
-
-        # queue for supposedly available proxies
-        self.__good_queue = asyncio.Queue()
-        # queue for supposedly unavailable proxies
-        self.__bad_queue = asyncio.Queue()
-        # queue for used proxies
-        self.__used_queue = asyncio.Queue()
-        # queue to be checked
-        self.__check_queue = asyncio.Queue(maxsize=dispatched_amount)
-
-        self.task_init = asyncio.create_task(self._init_queue())
-        self.task_checker = asyncio.create_task(self._start_checker())
-        self.task_renewer = asyncio.create_task(self._start_renewer())
-        self.task_checkers_dispatched = [
-            asyncio.create_task(self._checker_dispatched(i))
-        for i in range(dispatched_amount)]
-
-    # init a ProxyPool object using a file with proxies
-    @classmethod
-    def init_from_file(cls, path: str):
-        with open(path) as f:
-            proxies = list(map(Proxy.parse, f.readlines()))
-            return cls(proxies)
-
-    # adds proxy to the queue
-    async def add_proxy(self, proxy: Proxy):
-        await self.__bad_queue.put(proxy)
-
-    # init the bad_queue
-    async def _init_queue(self):
-        if self.scrapper is not None:
-            proxies_all = await self.scrapper.result
-            self.proxies = list(filter(lambda x: isinstance(x, HTTPSProxy), proxies_all))
-        
-        logging.info(f'Initializing ProxyPool with {len(self.proxies)} proxies')
-        for proxy in self.proxies:
-            await self.add_proxy(proxy)
-
-    # starts the process of checking all the proxies
-    async def _start_checker(self):
-        logging.info('Proxy checker started')
-        while True:
-            proxy = await self.__bad_queue.get()
-            await self.__check_queue.put(proxy)
-
-    # dispatched checker for concurrency
-    async def _checker_dispatched(self, number: int):
-        logging.info(f'Started dispatched proxy checker {number}')
-        while True:
-            proxy = await self.__check_queue.get()
-            if await proxy.check():
-                await self.__good_queue.put(proxy)
-            else:
-                await self.__bad_queue.put(proxy)
-
-    # renews used proxies when timeout runs out
-    async def _start_renewer(self):
-        await self.task_init
-        logging.info('Proxy renewer started')
-        counter = dict.fromkeys(self.proxies, 0)
-        
-        while True:
-            proxy = await self.__used_queue.get()
-            counter[proxy] += 1
-            # if counter[proxy] >= 50:
-            #     asyncio.create_task(self._hold_proxy(proxy))
-            # else:
-            #     await self.__good_queue.put(proxy)
-            await self.__good_queue.put(proxy)
+    def __init__(self, source: ProxySource, workers_amount=10, ping_url='https://www.google.com/', update_period=120):
+        self.source = source
+        self.workers_amount = workers_amount
+        self.ping_url = ping_url
+        self.update_period = update_period
+        self._proxy_set = set()
     
-    async def _hold_proxy(self, proxy):
-        logging.info(f'Proxy {proxy} is on hold')
-        await asyncio.sleep(self.USED_TIMEOUT)
-        await self.__bad_queue.put(proxy)
-
-    # generator that yields a supposedly available proxy
-    async def get_proxy(self) -> Proxy:
-        proxy = await self.__good_queue.get()
-        await self.__used_queue.put(proxy)
+        self._good_send_channel, self._good_receive_channel = trio.open_memory_channel(math.inf)
+        self._bad_send_channel, self._bad_receive_channel = trio.open_memory_channel(math.inf)
+    
+    async def add_proxy(self, proxy: HTTPSProxy):
+        await self._bad_send_channel.send(proxy)
+        self._proxy_set.add(proxy)
+    
+    # get a working proxy from the queue
+    async def get_proxy(self):
+        proxy = await self._good_receive_channel.receive()
+        await self._bad_send_channel.send(proxy)
         return proxy
+    
+    # check proxy for availability
+    async def _check_proxy(self, proxy):
+        try:
+            async with httpx.AsyncClient(proxies=proxy.to_httpx()) as client:
+                r = await client.get(self.ping_url, timeout=10)
+            return True
+        except (httpx.HTTPError, ssl.SSLError, httpx.ReadError, httpx.ConnectTimeout, OSError) as e:
+            return False
+    
+    async def _dispatched_checker(self, number=0, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            task_status.started(scope)
+            logging.info(f'Started dispatched proxy checker #{number}')
+
+            while True:
+                proxy = await self._bad_receive_channel.receive()
+                if await self._check_proxy(proxy):
+                    await self._good_send_channel.send(proxy)
+                else:
+                    await self._bad_send_channel.send(proxy)
+        
+        logging.info(f'Dispatched proxy checker #{number} done')
+    
+    async def update_proxies(self):
+        proxies = await self.source.get_proxies()
+        
+        count = 0
+        for proxy in filter(lambda x: isinstance(x, HTTPSProxy) and x not in self._proxy_set, proxies):
+            await self.add_proxy(proxy)
+            count += 1
+        
+        logging.info(f'Added {count} proxies to the pool')
+
+    async def _proxy_updater(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            task_status.started()
+            logging.info('Started proxy updater')
+
+            while True:
+                await self.update_proxies()
+                await trio.sleep(self.update_period)
+
+    async def start(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            async with trio.open_nursery() as nursery:
+                updater = await nursery.start(self._proxy_updater)
+                children = [await nursery.start(self._dispatched_checker, i) for i in range(self.workers_amount)]
+                
+                task_status.started(scope)
+                logging.info(f'Started ProxyPool')
+        
+        logging.info(f'ProxyPool done')
