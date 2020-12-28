@@ -1,4 +1,4 @@
-with import <nixpkgs> {};
+with import <nixos-unstable> {};
 with pkgs.python3Packages;
 
 buildPythonPackage rec {
