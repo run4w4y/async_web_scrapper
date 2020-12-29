@@ -20,12 +20,15 @@ class CSVWriter:
         self.__write_send_channel, self.__write_receive_channel = trio.open_memory_channel(math.inf)
     
     # add items to the channel
-    async def add_item(self, item):
-        await self.__write_send_channel.send(item)
+    async def add_item(self, item, path=None):
+        await self.__write_send_channel.send((item, path))
 
     # write function to be used in writer
-    async def _write(self, item):
-        async with await trio.open_file(self.csvpath, 'a', newline='') as csvfile:
+    async def _write(self, item, path=None):
+        if path is None:
+            path = self.csvpath
+            
+        async with await trio.open_file(path, 'a', newline='') as csvfile:
             buffer = io.StringIO()
             writer = csv.writer(buffer)
             writer.writerow(item.to_csv_row())
@@ -40,7 +43,7 @@ class CSVWriter:
 
             # the writer part
             while True:
-                item = await self.__write_receive_channel.receive()
-                await self._write(item)
+                item, path = await self.__write_receive_channel.receive()
+                await self._write(item, path)
         # log when out of cancel scope
         logging.info(f'CSVWriter(csvpath={self.csvpath}) done')
