@@ -4,10 +4,11 @@ from abc import ABC, abstractmethod
 
 
 class PageResult:
-    def __init__(self, items=[], pages=[], downloads=[]):
+    def __init__(self, items=[], pages=[], downloads=[], csvpath=None):
         self.items = items
         self.pages = pages
         self.downloads = downloads
+        self.csvpath
 
 
 class GenericPage(ABC):

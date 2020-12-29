@@ -53,7 +53,7 @@ class GenericScrapper(ABC):
                 
                 for item in res.items:
                     if self.csv_writer is not None:
-                        await self.csv_writer.add_item(item)
+                        await self.csv_writer.add_item(item, res.csvpath)
                     await self._result_send_channel.send(item)
                 
                 for download in res.downloads:
