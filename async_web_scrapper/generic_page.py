@@ -8,7 +8,7 @@ class PageResult:
         self.items = items
         self.pages = pages
         self.downloads = downloads
-        self.csvpath
+        self.csvpath = csvpath
 
 
 class GenericPage(ABC):

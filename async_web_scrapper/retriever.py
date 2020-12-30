@@ -31,6 +31,8 @@ class Retriever:
             try:
                 async with client:
                     r = await client.get(url, timeout=timeout)
+                    if r.status_code == 404:
+                        return None
                     r.raise_for_status()
             except (ssl.SSLError, httpx.HTTPError, httpx.ReadError, httpx.ConnectTimeout, OSError) as e:
                 if failsafe:
