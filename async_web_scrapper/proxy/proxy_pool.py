@@ -8,17 +8,21 @@ from .proxy_source import ProxySource
 from .proxy_types import HTTPSProxy
 
 
-# TODO: refresh proxies in the pool from time to time
+# TODO: [+] implement good proxy cooldown
+# TODO: [ ] check if its possible to use http proxies too
+# TODO: [ ] might want to preserve sessions if that would help stay connection to a proxy alive
 class ProxyPool:
-    def __init__(self, source: ProxySource, workers_amount=10, ping_url='https://www.google.com/', update_period=120):
+    def __init__(self, source: ProxySource, workers_amount=10, ping_url='https://www.google.com/', update_period=120, cooldown=0):
         self.source = source
         self.workers_amount = workers_amount
         self.ping_url = ping_url
         self.update_period = update_period
+        self.cooldown = cooldown
         self._proxy_set = set()
     
         self._good_send_channel, self._good_receive_channel = trio.open_memory_channel(math.inf)
         self._bad_send_channel, self._bad_receive_channel = trio.open_memory_channel(math.inf)
+        self._hold_send_channel, self._hold_receive_channel = trio.open_memory_channel(math.inf)
     
     async def add_proxy(self, proxy: HTTPSProxy):
         await self._bad_send_channel.send(proxy)
@@ -27,7 +31,7 @@ class ProxyPool:
     # get a working proxy from the queue
     async def get_proxy(self):
         proxy = await self._good_receive_channel.receive()
-        await self._bad_send_channel.send(proxy)
+        await self._hold_send_channel.send(proxy)
         return proxy
     
     # check proxy for availability
@@ -71,13 +75,24 @@ class ProxyPool:
             while True:
                 await self.update_proxies()
                 await trio.sleep(self.update_period)
+    
+    async def _proxy_holder(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            task_status.started()
+            
+            while True:
+                proxy = await self._hold_receive_channel.receive()
+                logging.info(f'Proxy {proxy} is on hold')
+                await trio.sleep(self.cooldown)
+                await self._good_send_channel.send(proxy)
 
     async def start(self, task_status=trio.TASK_STATUS_IGNORED):
         with trio.CancelScope() as scope:
             async with trio.open_nursery() as nursery:
                 updater = await nursery.start(self._proxy_updater)
                 children = [await nursery.start(self._dispatched_checker, i) for i in range(self.workers_amount)]
-                
+                holders = [await nursery.start(self._proxy_holder) for i in range(100)] # spawn 100 holders
+
                 task_status.started(scope)
                 logging.info(f'Started ProxyPool')
         
