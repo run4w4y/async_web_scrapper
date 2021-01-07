@@ -1,3 +1,5 @@
+import re
+import httpx
 from abc import ABC, abstractmethod
 from async_web_scrapper import GenericItem
 from .exceptions import InvalidIPStringError
@@ -22,14 +24,16 @@ class Proxy(GenericItem, ABC):
         return hash(str(self))
 
     # class constructor, pretty much the same everywhere
-    def __init__(self, ip: str, port: int, country: str = None):
+    def __init__(self, ip: str, port: int, country: str = None, username=None, password=None):
         self.ip = ip
         self.port = port
         self.country = country
+        self.username = username
+        self.password = password
     
     # parse ip:port from a string
     @classmethod
-    def parse(cls, proxy_str: str):
+    def parse(cls, proxy_str: str, username=None, password=None):
         proxy_str = proxy_str.strip() # strip the string just in case
 
         # check if the provided string is a valid ip:port
@@ -42,8 +46,9 @@ class Proxy(GenericItem, ABC):
     # converts proxy to a dict usable with requests
     def to_httpx(self):
         return httpx.Proxy(
-            url = f'{self.PROXY_PROTOCOL}://{self.ip}:{self.port}',
-            mode = 'FORWARD_ONLY'
+            url = f'{self.PROXY_PROTOCOL}://{self.ip}:{self.port}' if self.username is None 
+                else f'{self.PROXY_PROTOCOL}://{self.username}:{self.password}@{self.ip}:{self.port}',
+            mode = 'TUNNEL_ONLY', # mode=tunnel so we can use https even through http proxies
         )
     
     # converts proxy to a csv row
