@@ -5,11 +5,11 @@ import httpx
 import logging
 from .proxy import Proxy
 from .proxy_source import ProxySource
-from .proxy_types import HTTPSProxy
+from .proxy_types import HTTPProxy, HTTPSProxy
 
 
 # TODO: [+] implement good proxy cooldown
-# TODO: [ ] check if its possible to use http proxies too
+# TODO: [+] check if its possible to use http proxies too
 # TODO: [ ] might want to preserve sessions if that would help stay connection to a proxy alive
 class ProxyPool:
     def __init__(self, source: ProxySource, workers_amount=10, ping_url='https://www.google.com/', update_period=120, cooldown=0):
@@ -39,8 +39,11 @@ class ProxyPool:
         try:
             async with httpx.AsyncClient(proxies=proxy.to_httpx()) as client:
                 r = await client.get(self.ping_url, timeout=10)
+            logging.info(f'Proxy {proxy} appears to be working')
             return True
         except (httpx.HTTPError, ssl.SSLError, httpx.ReadError, httpx.ConnectTimeout, OSError) as e:
+            raise e
+            logging.info(f'Proxy {proxy} does not seem to be working')
             return False
     
     async def _dispatched_checker(self, number=0, task_status=trio.TASK_STATUS_IGNORED):
@@ -61,7 +64,7 @@ class ProxyPool:
         proxies = await self.source.get_proxies()
         
         count = 0
-        for proxy in filter(lambda x: isinstance(x, HTTPSProxy) and x not in self._proxy_set, proxies):
+        for proxy in filter(lambda x: isinstance(x, (HTTPSProxy, HTTPProxy)) and x not in self._proxy_set, proxies):
             await self.add_proxy(proxy)
             count += 1
         
@@ -84,7 +87,7 @@ class ProxyPool:
                 proxy = await self._hold_receive_channel.receive()
                 logging.info(f'Proxy {proxy} is on hold')
                 await trio.sleep(self.cooldown)
-                await self._good_send_channel.send(proxy)
+                await self._bad_send_channel.send(proxy)
 
     async def start(self, task_status=trio.TASK_STATUS_IGNORED):
         with trio.CancelScope() as scope:
