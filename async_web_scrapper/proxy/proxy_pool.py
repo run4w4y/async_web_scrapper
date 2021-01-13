@@ -39,11 +39,10 @@ class ProxyPool:
         try:
             async with httpx.AsyncClient(proxies=proxy.to_httpx()) as client:
                 r = await client.get(self.ping_url, timeout=10)
-            logging.info(f'Proxy {proxy} appears to be working')
+            # logging.info(f'Proxy {proxy} appears to be working')
             return True
         except (httpx.HTTPError, ssl.SSLError, httpx.ReadError, httpx.ConnectTimeout, OSError) as e:
-            raise e
-            logging.info(f'Proxy {proxy} does not seem to be working')
+            # logging.info(f'Proxy {proxy} does not seem to be working')
             return False
     
     async def _dispatched_checker(self, number=0, task_status=trio.TASK_STATUS_IGNORED):
