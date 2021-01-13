@@ -25,16 +25,21 @@ class Retriever:
             proxy = await proxy_pool.get_proxy()
             return httpx.AsyncClient(headers=self.HEADERS, proxies=proxy.to_httpx())
     
-    async def _retrieve(self, url, client, timeout, failsafe=False):
+    async def _retrieve(self, url, client, timeout, failsafe=False, data=None):
         r = None
         while True:
             try:
                 async with client:
-                    r = await client.get(url, timeout=timeout)
+                    r = None
+                    if data is None:
+                        r = await client.get(url, timeout=timeout)
+                    else:
+                        r = await client.post(url, timeout=timeout, data=data)
                     if r.status_code == 404:
                         return None
                     r.raise_for_status()
-            except (ssl.SSLError, httpx.HTTPError, httpx.ReadError, httpx.ConnectTimeout, OSError) as e:
+            except (httpx.ProxyError, ssl.SSLError, httpx.HTTPError, httpx.ReadError, httpx.ConnectTimeout, OSError) as e:
+                # logging.error(e)
                 if failsafe:
                     continue
                 raise e
@@ -43,7 +48,7 @@ class Retriever:
         
         return r
     
-    async def retrieve(self, url, useproxy=True, timeout=10, failsafe=False):
+    async def retrieve(self, url, useproxy=True, timeout=10, failsafe=False, data=None):
         client = None
         if useproxy and self.proxy_pool is not None:
             client = await self._client(self.proxy_pool) 
@@ -51,7 +56,7 @@ class Retriever:
             client = await self._client()
         
         result_send_channel, result_receive_channel = trio.open_memory_channel(0)
-        await self._retrieve_send_channel.send((url, result_send_channel, client, timeout, failsafe))
+        await self._retrieve_send_channel.send((url, result_send_channel, client, timeout, failsafe, data))
         result = await result_receive_channel.receive()
         
         await result_receive_channel.aclose()
@@ -59,12 +64,12 @@ class Retriever:
         
         return result
 
-    async def retrieve_html(self, url, useproxy=True, timeout=10, failsafe=False):
-        r = await self.retrieve(url, useproxy, timeout, failsafe)
+    async def retrieve_html(self, url, useproxy=True, timeout=10, failsafe=False, data=None):
+        r = await self.retrieve(url, useproxy, timeout, failsafe, data)
         return BeautifulSoup(r.text, 'html.parser')
 
-    async def retrieve_text(self, url, useproxy=True, timeout=10, failsafe=False):
-        r = await self.retrieve(url, useproxy, timeout, failsafe)
+    async def retrieve_text(self, url, useproxy=True, timeout=10, failsafe=False, data=None):
+        r = await self.retrieve(url, useproxy, timeout, failsafe, data)
         return r.text
 
     async def _dispatched_retriever(self, number=0, task_status=trio.TASK_STATUS_IGNORED):
@@ -73,8 +78,8 @@ class Retriever:
             logging.info(f'Started dispatched Retriever #{number}')
 
             while True:
-                url, result_channel, client, timeout, failsafe = await self._retrieve_receive_channel.receive()
-                r = await self._retrieve(url, client, timeout, failsafe)
+                url, result_channel, client, timeout, failsafe, data = await self._retrieve_receive_channel.receive()
+                r = await self._retrieve(url, client, timeout, failsafe, data)
                 await result_channel.send(r)
 
     async def start(self, task_status=trio.TASK_STATUS_IGNORED):
