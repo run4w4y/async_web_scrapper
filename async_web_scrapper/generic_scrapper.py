@@ -46,16 +46,16 @@ class GenericScrapper(ABC):
             while True:
                 page = await self._page_receive_channel.receive()
                 res = await page.process()
-                
-                for page in res.pages:
-                    self._pages_set.add(page)
-                    await self._page_send_channel.send(page)
+
+                for i in range(len(res.pages)):
+                    self._pages_set.add(res.pages[i])
+                    await self._page_send_channel.send(res.pages[i])
                 
                 for item in res.items:
                     if self.csv_writer is not None:
                         await self.csv_writer.add_item(item, res.csvpath)
                     await self._result_send_channel.send(item)
-                
+
                 for download in res.downloads:
                     if self.downloader is not None:
                         await self.donwloader.add_download(download)
@@ -80,6 +80,9 @@ class GenericScrapper(ABC):
                 logging.info(f'Started {type(self).__name__}')
                 
                 await nursery.start(self._wait_till_done)
+
+                while True:
+                    await trio.sleep(1000)
 
         # close all the channels when we are done
         await self._page_send_channel.aclose()
