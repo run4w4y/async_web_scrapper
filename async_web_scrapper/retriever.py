@@ -66,10 +66,18 @@ class Retriever:
 
     async def retrieve_html(self, url, useproxy=True, timeout=10, failsafe=False, data=None):
         r = await self.retrieve(url, useproxy, timeout, failsafe, data)
+        
+        if r is None:
+            return None
+        
         return BeautifulSoup(r.text, 'html.parser')
 
     async def retrieve_text(self, url, useproxy=True, timeout=10, failsafe=False, data=None):
         r = await self.retrieve(url, useproxy, timeout, failsafe, data)
+
+        if r is None:
+            return None
+
         return r.text
 
     async def _dispatched_retriever(self, number=0, task_status=trio.TASK_STATUS_IGNORED):
