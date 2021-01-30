@@ -19,10 +19,13 @@ class ProxyPool:
         self.update_period = update_period
         self.cooldown = cooldown
         self._proxy_set = set()
+        self._dead_set = set()
     
         self._good_send_channel, self._good_receive_channel = trio.open_memory_channel(math.inf)
         self._bad_send_channel, self._bad_receive_channel = trio.open_memory_channel(math.inf)
         self._hold_send_channel, self._hold_receive_channel = trio.open_memory_channel(math.inf)
+        self._dead_hold_send_channel, self._dead_hold_receive_channel = trio.open_memory_channel(math.inf)
+        self._checker_send_channel, self._checker_receive_channel = trio.open_memory_channel(math.inf)
     
     async def add_proxy(self, proxy: HTTPSProxy):
         await self._bad_send_channel.send(proxy)
@@ -86,6 +89,31 @@ class ProxyPool:
                 proxy = await self._hold_receive_channel.receive()
                 logging.info(f'Proxy {proxy} is on hold')
                 await trio.sleep(self.cooldown)
+                await self._checker_send_channel.send(proxy)
+    
+    async def _check_if_dead(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            task_status.started()
+            
+            while True:
+                proxy = await self._checker_receive_channel.receive()
+                if proxy in self._dead_set:
+                    self._dead_set.remove(proxy)
+                    await self._dead_hold_send_channel.send(proxy)
+                else:
+                    await self._bad_send_channel.send(proxy)
+    
+    def mark_dead_proxy(self, proxy):
+        self._dead_set.add(proxy)
+
+    async def _hold_dead_proxy(self, task_status=trio.TASK_STATUS_IGNORED):
+        with trio.CancelScope() as scope:
+            task_status.started()
+
+            while True:
+                proxy = await self._dead_hold_receive_channel.receive()
+                logging.info(f'Proxy {proxy} is used up')
+                await trio.sleep(21600)
                 await self._bad_send_channel.send(proxy)
 
     async def start(self, task_status=trio.TASK_STATUS_IGNORED):
@@ -94,8 +122,13 @@ class ProxyPool:
                 updater = await nursery.start(self._proxy_updater)
                 children = [await nursery.start(self._dispatched_checker, i) for i in range(self.workers_amount)]
                 holders = [await nursery.start(self._proxy_holder) for i in range(100)] # spawn 100 holders
+                dead_holders = [await nursery.start(self._hold_dead_proxy) for i in range(100)] # spawn 100 holders for dead proxies
+                checker = await nursery.start(self._check_if_dead)
 
                 task_status.started(scope)
                 logging.info(f'Started ProxyPool')
+            
+                while True:
+                    await trio.sleep(1000000)
         
         logging.info(f'ProxyPool done')

@@ -20,23 +20,25 @@ class Retriever:
     
     async def _client(self, proxy_pool=None):
         if proxy_pool is None:
-            return httpx.AsyncClient(headers=self.HEADERS)
+            return (None, httpx.AsyncClient(headers=self.HEADERS))
         else:
             proxy = await proxy_pool.get_proxy()
-            return httpx.AsyncClient(headers=self.HEADERS, proxies=proxy.to_httpx())
+            return (proxy, httpx.AsyncClient(headers=self.HEADERS, proxies=proxy.to_httpx()))
     
     async def _retrieve(self, url, client, timeout, failsafe=False, data=None):
         r = None
         while True:
             try:
-                async with client:
+                async with client[1]:
                     r = None
                     if data is None:
-                        r = await client.get(url, timeout=timeout)
+                        r = await client[1].get(url, timeout=timeout)
                     else:
-                        r = await client.post(url, timeout=timeout, data=data)
+                        r = await client[1].post(url, timeout=timeout, data=data)
                     if r.status_code == 404:
                         return None
+                    if r.status_code == 429:
+                        self.proxy_pool.mark_dead_proxy(client[0]) # supposedly that works
                     r.raise_for_status()
             except (httpx.ProxyError, ssl.SSLError, httpx.HTTPError, httpx.ReadError, httpx.ConnectTimeout, OSError) as e:
                 # logging.error(e)
