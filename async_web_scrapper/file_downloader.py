@@ -13,10 +13,12 @@ class _JobDone:
 class FileDownloader:
     _JOB_DONE_SIGNAL = _JobDone()
 
-    def __init__(self, retriever, save_path='downloads/', workers_amount=10, useproxy=False):
+    def __init__(self, retriever, save_path='downloads/', workers_amount=10, useproxy=False, check_request=None, after_download=None):
         self.retriever = retriever
         self.save_path = save_path
         self.useproxy = useproxy
+        self.check_request = check_request # sync check 
+        self.after_download = after_download # async operation
 
         # create path if doesnt exist
         os.makedirs(self.save_path, exist_ok=True)
@@ -27,16 +29,31 @@ class FileDownloader:
         self.__done_send_channel, self.__done_receieve_channel = trio.open_memory_channel(0)
 
     # add downloads to the channel, returns the path where it will be saved
-    async def add_download(self, download_url):
-        path = os.path.join(self.save_path, download_url.split('/')[-1].split('?')[0])
+    async def add_download(self, download_url, filename=None):
+        path = ""
+        if filename is None:
+            path = os.path.join(self.save_path, download_url.split('/')[-1].split('?')[0])
+        else:
+            path = os.path.join(self.save_path, filename)
         await self.__downloads_send_channel.send((path, download_url))
         return path
 
     async def _download(self, path, url):
-        r = await self.retriever.retrieve(url, failsafe=True, useproxy=self.useproxy)
+        while True:
+            r = await self.retriever.retrieve(url, failsafe=True, useproxy=self.useproxy)
+
+            if self.check_request is not None and self.check_request(r):
+                break
+            elif self.check_request is None:
+                break
+            else:
+                logging.error(f'Request check failed for download {url}. Trying again')
 
         async with await trio.open_file(path, 'wb') as f:
             await f.write(r.content)
+        
+        if self.after_download is not None:
+            await self.after_download(path)
 
     # dispatched downloader task
     async def _dispatched_downloader(self, number=0, task_status=trio.TASK_STATUS_IGNORED):
